@@ -1,46 +1,77 @@
-import msgpack
-import os
-import numpy as np
-import torch
-from torch.utils.data import BatchSampler, DataLoader, Dataset, SequentialSampler
 import argparse
+import os
+import pickle
+import random
+import sys
+
+import numpy as np
+import rdkit
+import torch
+import tqdm
+from rdkit import Chem
+from rdkit.Chem import QED, AllChem, Descriptors, Descriptors3D, RDConfig
+from torch.utils.data import (BatchSampler, DataLoader, Dataset,
+                              SequentialSampler)
+
+sys.path.append(os.path.join(RDConfig.RDContribDir, 'SA_Score'))
+import sascorer
+
 from qm9.data import collate as qm9_collate
 
 
-def extract_conformers(args):
-    drugs_file = os.path.join(args.data_dir, args.data_file)
-    save_file = f"geom_drugs_{'no_h_' if args.remove_h else ''}{args.conformations}"
-    smiles_list_file = 'geom_drugs_smiles.txt'
-    number_atoms_file = f"geom_drugs_n_{'no_h_' if args.remove_h else ''}{args.conformations}"
+def extract_properties(mol_3D, smi):
+    mol = Chem.MolFromSmiles(smi)
+    properties = {}
+    properties['qed'] = QED.qed(mol)
+    properties['logp'] = Descriptors.MolLogP(mol)
+    properties['sas'] = sascorer.calculateScore(mol)
+    properties['Asphericity'] = Descriptors3D.Asphericity(mol_3D)
+    return properties
 
-    unpacker = msgpack.Unpacker(open(drugs_file, "rb"))
+def extract_conformers(args):
+    base_dir = os.path.join(args.data_dir, args.data_file)
+    drugs_file = os.listdir(base_dir)
+    save_file = f"geom_drugs_{'no_h_' if args.remove_h else ''}{args.conformations}_random"
+    smiles_list_file = 'geom_drugs_smiles_random.txt'
+    number_atoms_file = f"geom_drugs_n_{'no_h_' if args.remove_h else ''}{args.conformations}_random_prop"
+
 
     all_smiles = []
     all_number_atoms = []
     dataset_conformers = []
     mol_id = 0
-    for i, drugs_1k in enumerate(unpacker):
-        print(f"Unpacking file {i}...")
-        for smiles, all_info in drugs_1k.items():
-            all_smiles.append(smiles)
-            conformers = all_info['conformers']
+    for i, drugs_1k in enumerate(tqdm.tqdm(drugs_file)):
+        with open(os.path.join(base_dir, drugs_1k), 'rb') as f:
+            if os.path.join(base_dir, drugs_1k)[-6:] != 'pickle':
+                continue
+            drug_pkl = pickle.load(f)
+            all_smiles.append(drug_pkl['smiles'])
+            conformers = drug_pkl['conformers']
             # Get the energy of each conformer. Keep only the lowest values
             all_energies = []
             for conformer in conformers:
                 all_energies.append(conformer['totalenergy'])
             all_energies = np.array(all_energies)
             argsort = np.argsort(all_energies)
-            lowest_energies = argsort[:args.conformations]
+            #lowest_energies = argsort[:args.conformations]
+            lowest_energies = list(range(0, len(conformers)))
+            random.shuffle(lowest_energies)
+            lowest_energies  = lowest_energies[:args.conformations]
             for id in lowest_energies:
                 conformer = conformers[id]
-                coords = np.array(conformer['xyz']).astype(float)        # n x 4
+                properties = np.array(list(extract_properties(conformer['rd_mol'], drug_pkl['smiles']).values()))
+                coords = np.array([conformer['rd_mol'].GetConformer().GetAtomPosition(x) for x in range(conformer['rd_mol'].GetNumAtoms())]).astype(float)        # n x 3
+                atom_type = np.array([atom.GetAtomicNum() for atom in conformer['rd_mol'].GetAtoms()]).astype(float)
+                atom_type = np.expand_dims(atom_type, 1)
+                coords = np.hstack((atom_type, coords))
                 if args.remove_h:
                     mask = coords[:, 0] != 1.0
                     coords = coords[mask]
                 n = coords.shape[0]
                 all_number_atoms.append(n)
                 mol_id_arr = mol_id * np.ones((n, 1), dtype=float)
-                id_coords = np.hstack((mol_id_arr, coords))
+                properties_array = properties * np.ones((n, 1), dtype=float)
+                id_coords = np.hstack((mol_id_arr, coords, properties_array))
 
                 dataset_conformers.append(id_coords)
                 mol_id += 1
@@ -98,7 +129,7 @@ def load_split_data(conformation_file, val_proportion=0.1, test_proportion=0.1,
     # del perm
 
     perm = np.load(os.path.join(base_path, 'geom_permutation.npy'))
-    data_list = [data_list[i] for i in perm]
+    data_list = [data_list[i] for i in perm if i < len(data_list)]
 
     num_mol = len(data_list)
     val_index = int(num_mol * val_proportion)
@@ -235,10 +266,10 @@ class GeomDrugsTransform(object):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--conformations", type=int, default=30,
+    parser.add_argument("--conformations", type=int, default=4,
                         help="Max number of conformations kept for each molecule.")
-    parser.add_argument("--remove_h", action='store_true', help="Remove hydrogens from the dataset.")
-    parser.add_argument("--data_dir", type=str, default='~/diffusion/data/geom/')
-    parser.add_argument("--data_file", type=str, default="drugs_crude.msgpack")
+    parser.add_argument("--remove_h", default=True, help="Remove hydrogens from the dataset.")
+    parser.add_argument("--data_dir", type=str, default='/home/AI4Science/qiangb/data_from_brain++/sharefs/3D_jtvae/GEOM/')
+    parser.add_argument("--data_file", type=str, default="rdkit_folder/drugs")
     args = parser.parse_args()
     extract_conformers(args)

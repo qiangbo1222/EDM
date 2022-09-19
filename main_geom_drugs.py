@@ -4,7 +4,7 @@ try:
 except ModuleNotFoundError:
     pass
 import build_geom_dataset
-from configs.datasets_config import geom_with_h
+from configs.datasets_config import geom_no_h
 import copy
 import utils
 import argparse
@@ -23,7 +23,7 @@ import train_test
 
 
 parser = argparse.ArgumentParser(description='e3_diffusion')
-parser.add_argument('--exp_name', type=str, default='debug_10')
+parser.add_argument('--exp_name', type=str, default='edm_geom_random4')
 parser.add_argument('--model', type=str, default='egnn_dynamics',
                     help='our_dynamics | schnet | simple_dynamics | '
                          'kernel_dynamics | egnn_dynamics |gnn_dynamics')
@@ -102,7 +102,7 @@ parser.add_argument('--n_stability_samples', type=int, default=20,
                     help='Number of samples to compute the stability')
 parser.add_argument('--normalize_factors', type=eval, default=[1, 4, 10],
                     help='normalize factors for [x, categorical, integer]')
-parser.add_argument('--remove_h', action='store_true')
+parser.add_argument('--remove_h', default=True)
 parser.add_argument('--include_charges', type=eval, default=False, help='include atom charge or not')
 parser.add_argument('--visualize_every_batch', type=int, default=5000)
 parser.add_argument('--normalization_factor', type=float,
@@ -115,12 +115,10 @@ parser.add_argument('--sequential', action='store_true',
                     help='Organize data by size to reduce average memory usage.')
 args = parser.parse_args()
 
-data_file = './data/geom/geom_drugs_30.npy'
+data_file = '/sharefs/sharefs-qb/3D_jtvae/GEOM/geom_drugs_no_h_4_random.npy'
 
-if args.remove_h:
-    raise NotImplementedError()
-else:
-    dataset_info = geom_with_h
+
+dataset_info = geom_no_h
 
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 device = torch.device("cuda" if args.cuda else "cpu")

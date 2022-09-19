@@ -1,4 +1,5 @@
 # Rdkit import should be first, do not move it
+import tqdm
 try:
     from rdkit import Chem
 except ModuleNotFoundError:
@@ -64,17 +65,30 @@ def sample_only_stable_different_sizes_and_save(
         dataset_info, n_samples=10, n_tries=50):
     assert n_tries > n_samples
 
-    nodesxsample = nodes_dist.sample(n_tries)
-    one_hot, charges, x, node_mask = sample(
-        args, device, flow, dataset_info,
-        nodesxsample=nodesxsample)
+    if n_tries % 20 == 0:
+        chunk_sizes = [20 for _ in range(n_tries // 20)]
+    else:
+        chunk_sizes = [20 for _ in range(n_tries // 20)]
+        chunk_sizes.append(n_tries % 20)
+    one_hot, charges, x, node_mask = [], [], [], []
+    for chunk in tqdm.tqdm(chunk_sizes):
+        nodesxsample = nodes_dist.sample(chunk)
+        result = sample(
+            args, device, flow, dataset_info,
+            nodesxsample=nodesxsample)
+        one_hot.append(result[0].cpu().detach())
+        charges.append(result[1].cpu().detach())
+        x.append(result[2].cpu().detach())
+        node_mask.append(result[3].cpu().detach())
+    one_hot, charges, x, node_mask = torch.cat(one_hot), torch.cat(charges), torch.cat(x), torch.cat(node_mask)
+
 
     counter = 0
-    for i in range(n_tries):
+    for i in tqdm.tqdm(range(n_tries)):
         num_atoms = int(node_mask[i:i+1].sum().item())
-        atom_type = one_hot[i:i+1, :num_atoms].argmax(2).squeeze(0).cpu().detach().numpy()
-        x_squeeze = x[i:i+1, :num_atoms].squeeze(0).cpu().detach().numpy()
-        mol_stable = check_stability(x_squeeze, atom_type, dataset_info)[0]
+        atom_type = one_hot[i:i+1, :num_atoms].argmax(2).squeeze(0).numpy()
+        x_squeeze = x[i:i+1, :num_atoms].squeeze(0).numpy()
+        mol_stable = check_stability(x_squeeze, atom_type, dataset_info)[0]#TODO debug here wrong shape for x
 
         num_remaining_attempts = n_tries - i - 1
         num_remaining_samples = n_samples - counter
@@ -83,7 +97,7 @@ def sample_only_stable_different_sizes_and_save(
             if mol_stable:
                 print('Found stable mol.')
             vis.save_xyz_file(
-                join(eval_args.model_path, 'eval/molecules/'),
+                eval_args.saved_path,
                 one_hot[i:i+1], charges[i:i+1], x[i:i+1],
                 id_from=counter, name='molecule_stable',
                 dataset_info=dataset_info,
@@ -97,13 +111,15 @@ def sample_only_stable_different_sizes_and_save(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path', type=str,
-                        default="outputs/edm_1",
+                        default="/home/qiangbo/molgen/EDM/e3_diffusion_for_molecules/outputs/edm_geom_drugs",
                         help='Specify model path')
     parser.add_argument(
         '--n_tries', type=int, default=10,
         help='N tries to find stable molecule for gif animation')
+    parser.add_argument('--saved_path', type=str, default='/sharefs/sharefs-qb/EDM')
     parser.add_argument('--n_nodes', type=int, default=19,
                         help='number of atoms in molecule for gif animation')
+    parser.add_argument('--n_samples', type=int, default=200)
 
     eval_args, unparsed_args = parser.parse_known_args()
 
@@ -138,16 +154,18 @@ def main():
                                  map_location=device)
 
     flow.load_state_dict(flow_state_dict)
-
+    
     print('Sampling handful of molecules.')
     sample_different_sizes_and_save(
         args, eval_args, device, flow, nodes_dist,
-        dataset_info=dataset_info, n_samples=30)
-
+        dataset_info=dataset_info, n_samples=eval_args.n_samples)
+    '''
     print('Sampling stable molecules.')
+    print(device)
     sample_only_stable_different_sizes_and_save(
         args, eval_args, device, flow, nodes_dist,
-        dataset_info=dataset_info, n_samples=10, n_tries=2*10)
+        dataset_info=dataset_info, n_samples=1000, n_tries=2*10000)
+
     print('Visualizing molecules.')
     vis.visualize(
         join(eval_args.model_path, 'eval/molecules/'), dataset_info,
@@ -158,7 +176,7 @@ def main():
         args, eval_args, device, flow,
         n_tries=eval_args.n_tries, n_nodes=eval_args.n_nodes,
         dataset_info=dataset_info)
-
+'''
 
 if __name__ == "__main__":
     main()
