@@ -15,7 +15,7 @@ from qm9 import bond_analyze
 ###########-->
 
 
-def save_xyz_file(path, one_hot, charges, positions, dataset_info, id_from=0, name='molecule', node_mask=None):
+def save_xyz_file(path, one_hot, charges, positions, dataset_info, id_from=0, name='molecule', node_mask=None, context_range=None):
     try:
         os.makedirs(path)
     except OSError:
@@ -25,9 +25,13 @@ def save_xyz_file(path, one_hot, charges, positions, dataset_info, id_from=0, na
         atomsxmol = torch.sum(node_mask, dim=1)
     else:
         atomsxmol = [one_hot.size(1)] * one_hot.size(0)
-
+    if context_range is not None:
+        context_range = np.linspace(context_range[0], context_range[1], one_hot.size(0))
     for batch_i in range(one_hot.size(0)):
-        f = open(path + name + '_' + "%03d.txt" % (batch_i + id_from), "w")
+        if context_range is not None:
+            f = open(path + name + f'_{context_range[batch_i]}_' + "%03d.txt" % (batch_i + id_from), "w")
+        else:
+            f = open(path + name + '_' + "%03d.txt" % (batch_i + id_from), "w")
         f.write("%d\n\n" % atomsxmol[batch_i])
         atoms = torch.argmax(one_hot[batch_i], dim=1)
         n_atoms = int(atomsxmol[batch_i])

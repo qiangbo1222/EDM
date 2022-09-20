@@ -3,24 +3,23 @@ try:
     from rdkit import Chem
 except ModuleNotFoundError:
     pass
-import build_geom_dataset
-from configs.datasets_config import geom_no_h
-import copy
-import utils
 import argparse
-import wandb
-from os.path import join
-from qm9.models import get_optim, get_model
-from equivariant_diffusion import en_diffusion
-
-from equivariant_diffusion import utils as diffusion_utils
-import torch
-import time
+import copy
 import pickle
+import time
+from os.path import join
 
-from qm9.utils import prepare_context, compute_mean_mad
+import torch
+
+import build_geom_dataset
 import train_test
-
+import utils
+import wandb
+from configs.datasets_config import geom_no_h
+from equivariant_diffusion import en_diffusion
+from equivariant_diffusion import utils as diffusion_utils
+from qm9.models import get_model, get_optim
+from qm9.utils import compute_mean_mad, prepare_context
 
 parser = argparse.ArgumentParser(description='e3_diffusion')
 parser.add_argument('--exp_name', type=str, default='edm_geom_random4')
@@ -81,12 +80,12 @@ parser.add_argument('--online', type=bool, default=True, help='True = wandb onli
 parser.add_argument('--no-cuda', action='store_true', default=False, help='disable CUDA training')
 parser.add_argument('--save_model', type=eval, default=True, help='save model')
 parser.add_argument('--generate_epochs', type=int, default=1)
-parser.add_argument('--num_workers', type=int, default=0,
+parser.add_argument('--num_workers', type=int, default=32,
                     help='Number of worker for the dataloader')
 parser.add_argument('--test_epochs', type=int, default=1)
 parser.add_argument('--data_augmentation', type=eval, default=False,
                     help='use attention in the EGNN')
-parser.add_argument("--conditioning", nargs='+', default=[],
+parser.add_argument("--conditioning", nargs='+', default=[1],
                     help='multiple arguments can be passed, '
                          'including: homo | onehot | lumo | num_atoms | etc. '
                          'usage: "--conditioning H_thermo homo onehot H_thermo"')
@@ -113,9 +112,10 @@ parser.add_argument('--filter_molecule_size', type=int, default=None,
                     help="Only use molecules below this size.")
 parser.add_argument('--sequential', action='store_true',
                     help='Organize data by size to reduce average memory usage.')
+parser.add_argument('--output_dir', type=str, default='/sharefs/sharefs-syx/qb_data/EDM/checkpoints')
 args = parser.parse_args()
 
-data_file = '/sharefs/sharefs-qb/3D_jtvae/GEOM/geom_drugs_no_h_4_random.npy'
+data_file = '/sharefs/sharefs-syx/qb_data/EDM/geom_drugs_no_h_4_random_prop.npy'
 
 
 dataset_info = geom_no_h
@@ -124,7 +124,7 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 device = torch.device("cuda" if args.cuda else "cpu")
 dtype = torch.float32
 
-split_data = build_geom_dataset.load_split_data(data_file, val_proportion=0.1, test_proportion=0.1, filter_size=args.filter_molecule_size)
+split_data = build_geom_dataset.load_split_data(args, data_file, val_proportion=0.1, test_proportion=0.1, filter_size=args.filter_molecule_size)
 transform = build_geom_dataset.GeomDrugsTransform(dataset_info, args.include_charges, device, args.sequential)
 dataloaders = {}
 for key, data_list in zip(['train', 'val', 'test'], split_data):
@@ -173,7 +173,7 @@ wandb.save('*.txt')
 
 data_dummy = next(iter(dataloaders['train']))
 
-
+'''
 if len(args.conditioning) > 0:
     print(f'Conditioning on {args.conditioning}')
     property_norms = compute_mean_mad(dataloaders, args.conditioning)
@@ -182,9 +182,10 @@ if len(args.conditioning) > 0:
 else:
     context_node_nf = 0
     property_norms = None
-
-args.context_node_nf = context_node_nf
-
+'''
+#modify
+args.context_node_nf = 1
+property_norms = None
 
 # Create EGNN flow
 model, nodes_dist, prop_dist = get_model(args, device, dataset_info, dataloader_train=dataloaders['train'])
@@ -240,9 +241,9 @@ def main():
             if isinstance(model, en_diffusion.EnVariationalDiffusion):
                 wandb.log(model.log_info(), commit=True)
 
-            if not args.break_train_epoch:
-                train_test.analyze_and_save(epoch, model_ema, nodes_dist, args, device,
-                                            dataset_info, prop_dist, n_samples=args.n_stability_samples)
+            #if not args.break_train_epoch:
+            #    train_test.analyze_and_save(epoch, model_ema, nodes_dist, args, device,
+            #                                dataset_info, prop_dist, n_samples=args.n_stability_samples)
             nll_val = train_test.test(args, dataloaders['val'], epoch, model_ema_dp, device, dtype,
                                       property_norms, nodes_dist, partition='Val')
             nll_test = train_test.test(args, dataloaders['test'], epoch, model_ema_dp, device, dtype,
@@ -253,19 +254,19 @@ def main():
                 best_nll_test = nll_test
                 if args.save_model:
                     args.current_epoch = epoch + 1
-                    utils.save_model(optim, 'outputs/%s/optim.npy' % args.exp_name)
-                    utils.save_model(model, 'outputs/%s/generative_model.npy' % args.exp_name)
+                    utils.save_model(optim, f'{args.output_dir}/%s/optim.npy' % args.exp_name)
+                    utils.save_model(model, f'{args.output_dir}/%s/generative_model.npy' % args.exp_name)
                     if args.ema_decay > 0:
-                        utils.save_model(model_ema, 'outputs/%s/generative_model_ema.npy' % args.exp_name)
-                    with open('outputs/%s/args.pickle' % args.exp_name, 'wb') as f:
+                        utils.save_model(model_ema,  f'{args.output_dir}/%s/generative_model_ema.npy' % args.exp_name)
+                    with open( f'{args.output_dir}/%s/args.pickle' % args.exp_name, 'wb') as f:
                         pickle.dump(args, f)
 
             if args.save_model:
-                utils.save_model(optim, 'outputs/%s/optim_%d.npy' % (args.exp_name, epoch))
-                utils.save_model(model, 'outputs/%s/generative_model_%d.npy' % (args.exp_name, epoch))
+                utils.save_model(optim,  f'{args.output_dir}/%s/optim_%d.npy' % (args.exp_name, epoch))
+                utils.save_model(model,  f'{args.output_dir}/%s/generative_model_%d.npy' % (args.exp_name, epoch))
                 if args.ema_decay > 0:
-                    utils.save_model(model_ema, 'outputs/%s/generative_model_ema_%d.npy' % (args.exp_name, epoch))
-                with open('outputs/%s/args_%d.pickle' % (args.exp_name, epoch), 'wb') as f:
+                    utils.save_model(model_ema,  f'{args.output_dir}/%s/generative_model_ema_%d.npy' % (args.exp_name, epoch))
+                with open( f'{args.output_dir}/%s/args_%d.pickle' % (args.exp_name, epoch), 'wb') as f:
                     pickle.dump(args, f)
             print('Val loss: %.4f \t Test loss:  %.4f' % (nll_val, nll_test))
             print('Best val loss: %.4f \t Best test loss:  %.4f' % (best_nll_val, best_nll_test))

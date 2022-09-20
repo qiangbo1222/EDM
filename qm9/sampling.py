@@ -1,8 +1,10 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-from equivariant_diffusion.utils import assert_mean_zero_with_mask, remove_mean_with_mask,\
-    assert_correctly_masked
+from equivariant_diffusion.utils import (assert_correctly_masked,
+                                         assert_mean_zero_with_mask,
+                                         remove_mean_with_mask)
+
 from qm9.analyze import check_stability
 
 
@@ -108,7 +110,7 @@ def sample_chain(args, device, flow, n_tries, dataset_info, prop_dist=None):
 
 
 def sample(args, device, generative_model, dataset_info,
-           prop_dist=None, nodesxsample=torch.tensor([10]), context=None,
+           prop_dist=None, nodesxsample=torch.tensor([10]), context_range=None,
            fix_noise=False):
     max_n_nodes = dataset_info['max_n_nodes']  # this is the maximum node_size in QM9
 
@@ -129,9 +131,13 @@ def sample(args, device, generative_model, dataset_info,
 
     # TODO FIX: This conditioning just zeros.
     if args.context_node_nf > 0:
+        '''
         if context is None:
             context = prop_dist.sample_batch(nodesxsample)
         context = context.unsqueeze(1).repeat(1, max_n_nodes, 1).to(device) * node_mask
+        '''
+        context = np.linspace(context_range[0], context_range[1], batch_size)
+        context = torch.tensor(context).unsqueeze(1).repeat(1, max_n_nodes).unsqueeze(2).to(device, torch.float32) * node_mask
     else:
         context = None
 
@@ -151,7 +157,7 @@ def sample(args, device, generative_model, dataset_info,
     else:
         raise ValueError(args.probabilistic_model)
 
-    return one_hot, charges, x, node_mask
+    return one_hot, charges, x, node_mask, context
 
 
 def sample_sweep_conditional(args, device, generative_model, dataset_info, prop_dist, n_nodes=19, n_frames=100):

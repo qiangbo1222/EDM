@@ -3,23 +3,28 @@ try:
     from rdkit import Chem
 except ModuleNotFoundError:
     pass
-import utils
 import argparse
-from qm9 import dataset
-from qm9.models import get_model
 import os
-from equivariant_diffusion.utils import assert_mean_zero_with_mask, remove_mean_with_mask,\
-    assert_correctly_masked
-import torch
-import time
 import pickle
-from configs.datasets_config import get_dataset_info
+import time
 from os.path import join
-from qm9.sampling import sample
-from qm9.analyze import analyze_stability_for_molecules, analyze_node_distribution
-from qm9.utils import prepare_context, compute_mean_mad
-from qm9 import visualizer as qm9_visualizer
+
+import torch
+import tqdm
+
 import qm9.losses as losses
+import utils
+from configs.datasets_config import get_dataset_info
+from equivariant_diffusion.utils import (assert_correctly_masked,
+                                         assert_mean_zero_with_mask,
+                                         remove_mean_with_mask)
+from qm9 import dataset
+from qm9 import visualizer as qm9_visualizer
+from qm9.analyze import (analyze_node_distribution,
+                         analyze_stability_for_molecules)
+from qm9.models import get_model
+from qm9.sampling import sample
+from qm9.utils import compute_mean_mad, prepare_context
 
 try:
     from qm9 import rdkit_functions
@@ -39,10 +44,10 @@ def analyze_and_save(args, eval_args, device, generative_model,
     assert n_samples % batch_size == 0
     molecules = {'one_hot': [], 'x': [], 'node_mask': []}
     start_time = time.time()
-    for i in range(int(n_samples/batch_size)):
+    for i in tqdm.tqdm(range(int(n_samples/batch_size))):
         nodesxsample = nodes_dist.sample(batch_size)
-        one_hot, charges, x, node_mask = sample(
-            args, device, generative_model, dataset_info, prop_dist=prop_dist, nodesxsample=nodesxsample)
+        one_hot, charges, x, node_mask, context = sample(
+            args, device, generative_model, dataset_info, prop_dist=prop_dist, nodesxsample=nodesxsample, context_range=[0, 1])
 
         molecules['one_hot'].append(one_hot.detach().cpu())
         molecules['x'].append(x.detach().cpu())
@@ -58,13 +63,13 @@ def analyze_and_save(args, eval_args, device, generative_model,
             qm9_visualizer.save_xyz_file(
                 join(eval_args.model_path, 'eval/analyzed_molecules/'),
                 one_hot, charges, x, dataset_info, id_from, name='molecule',
-                node_mask=node_mask)
+                node_mask=node_mask, context_range=[0, 1])
 
     molecules = {key: torch.cat(molecules[key], dim=0) for key in molecules}
-    stability_dict, rdkit_metrics = analyze_stability_for_molecules(
-        molecules, dataset_info)
+    #stability_dict, rdkit_metrics = analyze_stability_for_molecules(
+    #    molecules, dataset_info)
 
-    return stability_dict, rdkit_metrics
+    #return stability_dict, rdkit_metrics
 
 
 def test(args, flow_dp, nodes_dist, device, dtype, loader, partition='Test', num_passes=1):
@@ -113,10 +118,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path', type=str, default="outputs/edm_1",
                         help='Specify model path')
-    parser.add_argument('--n_samples', type=int, default=100,
+    parser.add_argument('--n_samples', type=int, default=1000,
                         help='Specify model path')
     parser.add_argument('--batch_size_gen', type=int, default=100,
-                        help='Specify model path')
+                        help='Specify bs')
     parser.add_argument('--save_to_xyz', type=eval, default=False,
                         help='Should save samples to xyz files.')
 
@@ -141,6 +146,7 @@ def main():
     print(args)
 
     # Retrieve QM9 dataloaders
+    args.output_dir = '/'.join(eval_args.model_path.split('/')[:-1])#holder
     dataloaders, charge_scale = dataset.retrieve_dataloaders(args)
 
     dataset_info = get_dataset_info(args.dataset, args.remove_h)
@@ -157,12 +163,13 @@ def main():
     generative_model.load_state_dict(flow_state_dict)
 
     # Analyze stability, validity, uniqueness and novelty
-    stability_dict, rdkit_metrics = analyze_and_save(
+    analyze_and_save(
         args, eval_args, device, generative_model, nodes_dist,
         prop_dist, dataset_info, n_samples=eval_args.n_samples,
         batch_size=eval_args.batch_size_gen, save_to_xyz=eval_args.save_to_xyz)
-    print(stability_dict)
+    #print(stability_dict)
 
+    '''
     if rdkit_metrics is not None:
         rdkit_metrics = rdkit_metrics[0]
         print("Validity %.4f, Uniqueness: %.4f, Novelty: %.4f" % (rdkit_metrics[0], rdkit_metrics[1], rdkit_metrics[2]))
@@ -192,7 +199,7 @@ def main():
         print(f'Overview: val nll {val_nll} test nll {test_nll}',
               stability_dict,
               file=f)
-
+    '''
 
 if __name__ == "__main__":
     main()

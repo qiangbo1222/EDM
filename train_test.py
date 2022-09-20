@@ -1,15 +1,18 @@
-import wandb
-from equivariant_diffusion.utils import assert_mean_zero_with_mask, remove_mean_with_mask,\
-    assert_correctly_masked, sample_center_gravity_zero_gaussian_with_mask
-import numpy as np
-import qm9.visualizer as vis
-from qm9.analyze import analyze_stability_for_molecules
-from qm9.sampling import sample_chain, sample, sample_sweep_conditional
-import utils
-import qm9.utils as qm9utils
-from qm9 import losses
 import time
+
+import numpy as np
 import torch
+
+import qm9.utils as qm9utils
+import qm9.visualizer as vis
+import utils
+import wandb
+from equivariant_diffusion.utils import (
+    assert_correctly_masked, assert_mean_zero_with_mask, remove_mean_with_mask,
+    sample_center_gravity_zero_gaussian_with_mask)
+from qm9 import losses
+from qm9.analyze import analyze_stability_for_molecules
+from qm9.sampling import sample, sample_chain, sample_sweep_conditional
 
 
 def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dtype, property_norms, optim,
@@ -42,7 +45,8 @@ def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dt
         h = {'categorical': one_hot, 'integer': charges}
 
         if len(args.conditioning) > 0:
-            context = qm9utils.prepare_context(args.conditioning, data, property_norms).to(device, dtype)
+            #context = qm9utils.prepare_context(args.conditioning, data, property_norms).to(device, dtype)
+            context = data['context'].to(device, dtype)
             assert_correctly_masked(context, node_mask)
         else:
             context = None
@@ -75,19 +79,19 @@ def train_epoch(args, loader, epoch, model, model_dp, model_ema, ema, device, dt
         nll_epoch.append(nll.item())
         if (epoch % args.test_epochs == 0) and (i % args.visualize_every_batch == 0) and not (epoch == 0 and i == 0):
             start = time.time()
-            if len(args.conditioning) > 0:
-                save_and_sample_conditional(args, device, model_ema, prop_dist, dataset_info, epoch=epoch)
-            save_and_sample_chain(model_ema, args, device, dataset_info, prop_dist, epoch=epoch,
-                                  batch_id=str(i))
-            sample_different_sizes_and_save(model_ema, nodes_dist, args, device, dataset_info,
-                                            prop_dist, epoch=epoch)
-            print(f'Sampling took {time.time() - start:.2f} seconds')
+            #if len(args.conditioning) > 0:
+            #    save_and_sample_conditional(args, device, model_ema, prop_dist, dataset_info, epoch=epoch)
+            #save_and_sample_chain(model_ema, args, device, dataset_info, prop_dist, epoch=epoch,
+            #                      batch_id=str(i))
+            #sample_different_sizes_and_save(model_ema, nodes_dist, args, device, dataset_info,
+            #                                prop_dist, epoch=epoch)
+            #print(f'Sampling took {time.time() - start:.2f} seconds')
 
-            vis.visualize(f"outputs/{args.exp_name}/epoch_{epoch}_{i}", dataset_info=dataset_info, wandb=wandb)
-            vis.visualize_chain(f"outputs/{args.exp_name}/epoch_{epoch}_{i}/chain/", dataset_info, wandb=wandb)
-            if len(args.conditioning) > 0:
-                vis.visualize_chain("outputs/%s/epoch_%d/conditional/" % (args.exp_name, epoch), dataset_info,
-                                    wandb=wandb, mode='conditional')
+            #vis.visualize(f"outputs/{args.exp_name}/epoch_{epoch}_{i}", dataset_info=dataset_info, wandb=wandb)
+            #vis.visualize_chain(f"outputs/{args.exp_name}/epoch_{epoch}_{i}/chain/", dataset_info, wandb=wandb)
+            #if len(args.conditioning) > 0:
+            #    vis.visualize_chain("outputs/%s/epoch_%d/conditional/" % (args.exp_name, epoch), dataset_info,
+            #                        wandb=wandb, mode='conditional')
         wandb.log({"Batch NLL": nll.item()}, commit=True)
         if args.break_train_epoch:
             break
@@ -130,7 +134,8 @@ def test(args, loader, epoch, eval_model, device, dtype, property_norms, nodes_d
             h = {'categorical': one_hot, 'integer': charges}
 
             if len(args.conditioning) > 0:
-                context = qm9utils.prepare_context(args.conditioning, data, property_norms).to(device, dtype)
+                #context = qm9utils.prepare_context(args.conditioning, data, property_norms).to(device, dtype)
+                context = data['context'].to(device, dtype)
                 assert_correctly_masked(context, node_mask)
             else:
                 context = None

@@ -38,11 +38,11 @@ def retrieve_dataloaders(cfg):
     elif 'geom' in cfg.dataset:
         import build_geom_dataset
         from configs.datasets_config import get_dataset_info
-        data_file = './data/geom/geom_drugs_30.npy'
+        data_file = '/sharefs/sharefs-syx/qb_data/EDM/geom_drugs_no_h_4_random_prop.npy'
         dataset_info = get_dataset_info(cfg.dataset, cfg.remove_h)
 
         # Retrieve QM9 dataloaders
-        split_data = build_geom_dataset.load_split_data(data_file,
+        split_data = build_geom_dataset.load_split_data(cfg, data_file,
                                                         val_proportion=0.1,
                                                         test_proportion=0.1,
                                                         filter_size=cfg.filter_molecule_size)

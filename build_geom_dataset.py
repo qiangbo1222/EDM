@@ -84,19 +84,19 @@ def extract_conformers(args):
     print("Average number of atoms per molecule", dataset.shape[0] / mol_id)
 
     # Save conformations
-    np.save(os.path.join(args.data_dir, save_file), dataset)
+    np.save(os.path.join(args.output_dir, save_file), dataset)
     # Save SMILES
-    with open(os.path.join(args.data_dir, smiles_list_file), 'w') as f:
+    with open(os.path.join(args.output_dir, smiles_list_file), 'w') as f:
         for s in all_smiles:
             f.write(s)
             f.write('\n')
 
     # Save number of atoms per conformation
-    np.save(os.path.join(args.data_dir, number_atoms_file), all_number_atoms)
+    np.save(os.path.join(args.output_dir, number_atoms_file), all_number_atoms)
     print("Dataset processed.")
 
 
-def load_split_data(conformation_file, val_proportion=0.1, test_proportion=0.1,
+def load_split_data(args, conformation_file, val_proportion=0.1, test_proportion=0.1,
                     filter_size=None):
     from pathlib import Path
     path = Path(conformation_file)
@@ -120,15 +120,17 @@ def load_split_data(conformation_file, val_proportion=0.1, test_proportion=0.1,
         assert len(data_list) > 0, 'No molecules left after filter.'
 
     # CAREFUL! Only for first time run:
-    # perm = np.random.permutation(len(data_list)).astype('int32')
+    #set random seed
+    #np.random.seed(2022)
+    #perm = np.random.permutation(len(data_list)).astype('int32')
     # print('Warning, currently taking a random permutation for '
     #       'train/val/test partitions, this needs to be fixed for'
     #       'reproducibility.')
-    # assert not os.path.exists(os.path.join(base_path, 'geom_permutation.npy'))
-    # np.save(os.path.join(base_path, 'geom_permutation.npy'), perm)
+    #assert not os.path.exists(os.path.join(args.output_dir, 'geom_permutation.npy'))
+    #np.save(os.path.join(args.output_dir, 'geom_permutation.npy'), perm)
     # del perm
 
-    perm = np.load(os.path.join(base_path, 'geom_permutation.npy'))
+    perm = np.load(os.path.join(args.output_dir, 'geom_permutation.npy'))
     data_list = [data_list[i] for i in perm if i < len(data_list)]
 
     num_mol = len(data_list)
@@ -247,10 +249,12 @@ class GeomDrugsTransform(object):
     def __call__(self, data):
         n = data.shape[0]
         new_data = {}
-        new_data['positions'] = torch.from_numpy(data[:, -3:])
+        #modify for context_nf = 1
+        new_data['positions'] = torch.from_numpy(data[:, 1:4])
         atom_types = torch.from_numpy(data[:, 0].astype(int)[:, None])
         one_hot = atom_types == self.atomic_number_list
         new_data['one_hot'] = one_hot
+        new_data['context'] = torch.from_numpy(data[:, 5:6])
         if self.include_charges:
             new_data['charges'] = torch.zeros(n, 1, device=self.device)
         else:
@@ -269,7 +273,8 @@ if __name__ == '__main__':
     parser.add_argument("--conformations", type=int, default=4,
                         help="Max number of conformations kept for each molecule.")
     parser.add_argument("--remove_h", default=True, help="Remove hydrogens from the dataset.")
-    parser.add_argument("--data_dir", type=str, default='/home/AI4Science/qiangb/data_from_brain++/sharefs/3D_jtvae/GEOM/')
+    parser.add_argument("--data_dir", type=str, default='/sharefs/sharefs-qb/3D_jtvae/GEOM/')
+    parser.add_argument("--output_dir", type=str, default='/sharefs/sharefs-syx/qb_data/EDM')
     parser.add_argument("--data_file", type=str, default="rdkit_folder/drugs")
     args = parser.parse_args()
     extract_conformers(args)
