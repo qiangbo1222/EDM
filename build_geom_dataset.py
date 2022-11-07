@@ -254,7 +254,7 @@ class GeomDrugsTransform(object):
         atom_types = torch.from_numpy(data[:, 0].astype(int)[:, None])
         one_hot = atom_types == self.atomic_number_list
         new_data['one_hot'] = one_hot
-        new_data['context'] = torch.from_numpy(data[:, 5:6])
+        new_data['context'] = torch.from_numpy(data[:, 6:7]) / 10#remember to /10 for SAS
         if self.include_charges:
             new_data['charges'] = torch.zeros(n, 1, device=self.device)
         else:

@@ -112,10 +112,10 @@ parser.add_argument('--filter_molecule_size', type=int, default=None,
                     help="Only use molecules below this size.")
 parser.add_argument('--sequential', action='store_true',
                     help='Organize data by size to reduce average memory usage.')
-parser.add_argument('--output_dir', type=str, default='/sharefs/sharefs-syx/qb_data/EDM/checkpoints')
+parser.add_argument('--output_dir', type=str, default='/home/AI4Science/qiangb/data_from_brain++/sharefs/EDM/edm_prop/checkpoints')
 args = parser.parse_args()
 
-data_file = '/sharefs/sharefs-syx/qb_data/EDM/geom_drugs_no_h_4_random_prop.npy'
+data_file = '/home/AI4Science/qiangb/data_from_brain++/sharefs/EDM/edm_prop/geom_drugs_no_h_4_random_prop.npy'
 
 
 dataset_info = geom_no_h
